@@ -331,26 +331,19 @@ class EinsteinCalculatorApp:
             # --- Ricciho tenzor --- 
             self.root.after(0, lambda: self.update_status("Počítam Ricciho tenzor", 45))
             self.print_section_header("Ricciho tenzor R_{\\mu\\nu}")
-            print("% Počítam Ricciho tenzor...\n")
+            print("% Počítam Ricciho tenzor (podľa pôvodného tono.py)...\n") # Upravený komentár
             R = sp.Matrix.zeros(n, n)
             for mu in range(n):
                 for nu in range(n):
                     if not self.running: raise InterruptedError(f"Výpočet zastavený pri výpočte R_{{{mu}}}{{{nu}}}")
                     print(f"% Počítam R_{{{mu}}}{{{nu}}}...")
-                    term1 = sp.sympify(0)
-                    for l_idx in range(n):
-                        term1 += sp.diff(Gamma[l_idx][mu][nu], coords[l_idx])
-                    term2 = sp.sympify(0)
-                    for l_idx in range(n):
-                        term2 += sp.diff(Gamma[l_idx][l_idx][nu], coords[mu])
-                    term3 = sp.sympify(0)
-                    for l_idx in range(n):
-                        for r_idx in range(n):
-                            term3 += Gamma[l_idx][mu][nu] * Gamma[r_idx][l_idx][r_idx]
-                    term4 = sp.sympify(0)
-                    for l_idx in range(n):
-                        for r_idx in range(n):
-                            term4 += Gamma[r_idx][mu][l_idx] * Gamma[l_idx][nu][r_idx]
+                    
+                    # Obnovenie presnej logiky z tono.py
+                    term1 = sum(sp.diff(Gamma[l][mu][nu], coords[l]) for l in range(n))
+                    term2 = sum(sp.diff(Gamma[mu][l][nu], coords[l]) for l in range(n)) # Logika z tono.py
+                    term3 = sum(sum(Gamma[l][mu][nu] * Gamma[r][l][r] for r in range(n)) for l in range(n)) # Logika z tono.py
+                    term4 = sum(sum(Gamma[mu][l][r] * Gamma[r][nu][l] for r in range(n)) for l in range(n)) # Logika z tono.py
+                    
                     R[mu, nu] = sp.simplify(term1 - term2 + term3 - term4)
                     print(f"% R_{{{mu}}}{{{nu}}} = {sp.latex(R[mu, nu])}\n")
                 progress = 45 + ((mu + 1) / n * 15)
@@ -397,32 +390,22 @@ class EinsteinCalculatorApp:
             # --- Kovariantná divergencia --- 
             self.root.after(0, lambda: self.update_status("Počítam kovariantnú divergenciu", 90))
             self.print_section_header("Kovariantná divergencia \\nabla_\\nu G^{\\mu\\nu}")
-            print("% Počítam kovariantnú divergenciu \\nabla_\\nu G^{\\mu\\nu}...\n")
+            print("% Počítam kovariantnú divergenciu (podľa pôvodného tono.py)...\n") # Upravený komentár
             div_G = sp.Matrix.zeros(n, 1)
             for mu in range(n):
                 if not self.running: raise InterruptedError(f"Výpočet zastavený pri výpočte divergencie pre \\mu={{{mu}}}")
                 print(f"% Počítam zložku divergencie pre \\mu={{{mu}}}...")
                 expr = sp.sympify(0)
-                term_diff = sp.sympify(0)
+                # Obnovenie presnej logiky z tono.py
                 for nu in range(n):
-                    print(f"%   Derivujem G^{{{mu}}}_{{{nu}}} podľa súradnice {{{coords[nu].name}}}...")
-                    term_diff += sp.diff(G_mixed[mu, nu], coords[nu])
-                print(f"%   Výsledok derivácie pre \\mu={{{mu}}}: {sp.latex(term_diff)}")
-                expr += term_diff
+                    print(f"%   Pridávam člen ∂_ν G^{{{mu}}}{{{nu}}}...")
+                    expr += sp.diff(G_mixed[mu, nu], coords[nu])
+                    print(f"%   Pridávam členy s Gamma... (logika z tono.py)")
+                    for l in range(n):
+                        gamma_term = G_mixed[l, nu] * Gamma[mu][nu][l] # Presne ako v tono.py
+                        print(f"%     Pridávam G^{{{l}}}{{{nu}}} * Gamma^{{{mu}}}_{{{nu}}}{{{l}}} = {sp.latex(gamma_term)}")
+                        expr += gamma_term 
                 
-                term_gamma1 = sp.sympify(0)
-                term_gamma2 = sp.sympify(0)
-                for nu in range(n):
-                     for l in range(n):
-                         print(f"%   Pridávam člen Gamma^{{{mu}}}_{{{l}}}{{{nu}}} * G^{{{l}}}_{{{nu}}}...")
-                         term_gamma1 += Gamma[mu][l][nu] * G_mixed[l, nu]
-                         print(f"%   Pridávam člen Gamma^{{{l}}}_{{{l}}}{{{nu}}} * G^{{{mu}}}_{{{nu}}}...")
-                         term_gamma2 += Gamma[l][l][nu] * G_mixed[mu, nu] 
-                
-                print(f"%   Výsledok 1. Gamma člena pre \\mu={{{mu}}}: {sp.latex(term_gamma1)}")
-                print(f"%   Výsledok 2. Gamma člena pre \\mu={{{mu}}}: {sp.latex(term_gamma2)}")
-                expr += term_gamma1 + term_gamma2
-
                 print(f"%   Výsledný výraz pre divergenciu (pred simplify) pre \\mu={{{mu}}}: {sp.latex(expr)}")
                 print(f"%   Zjednodušujem výraz pre divergenciu pre \\mu={{{mu}}}...")
                 div_G[mu] = sp.simplify(expr)
@@ -431,6 +414,7 @@ class EinsteinCalculatorApp:
                 progress = 90 + ((mu + 1) / n * 10)
                 self.root.after(0, lambda p=progress: self.update_status("Počítam kovariantnú divergenciu", p))
             
+            # Výpis finálnych výsledkov divergencie
             self.print_section_header("Výsledok - Kovariantná divergencia \\nabla_\\nu G^{\\mu\\nu}")
             div_indices = [(i,) for i in range(n)]
             self.pretty_print_tensor_latex(div_G, "\\nabla_\\nu G^", div_indices)
@@ -450,6 +434,7 @@ class EinsteinCalculatorApp:
             print(f"% Chyba: {str(e)}")
             import traceback
             print("% Traceback:")
+            # Získanie tracebacku ako string a jeho výpis ako komentár
             tb_lines = traceback.format_exc().splitlines()
             for line in tb_lines:
                 print(f"% {line}")
@@ -457,14 +442,18 @@ class EinsteinCalculatorApp:
         finally:
             # Obnova štandardného výstupu
             sys.stdout = old_stdout
+            # Finish calculation sa zavolá automaticky cez check_calculation_status
+            # po skončení tohto vlákna (či už úspešne, prerušením alebo chybou)
             if calculation_successful:
                  self.root.after(0, lambda: self.update_status("Výpočet dokončený", 100))
             
     def finish_calculation(self):
-        self.running = False
+        # Táto metóda sa volá po skončení vlákna (aj pri chybe/prerušení)
+        self.running = False # Uistíme sa, že je False
         self.run_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
         self.clear_button.config(state=tk.NORMAL)
+        # Stavový label už bol nastavený na konci perform_calculation alebo v InterruptedError/Exception
         
 if __name__ == "__main__":
     root = tk.Tk()
