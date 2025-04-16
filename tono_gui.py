@@ -132,8 +132,8 @@ class EinsteinCalculatorApp:
         
         self.create_widgets()
         
-        # Nastavenie predvolenej metriky z pôvodného tono.py
-        self.set_original_tono_metric_default()
+        # Nastavenie predvolenej Kerrovej metriky
+        self.set_kerr_metric_default()
         
         # Zavrieme stdout redirector pri zatváraní okna
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -240,43 +240,27 @@ class EinsteinCalculatorApp:
         # Inicializujeme až po vytvorení output_text
         self.stdout_redirector = RedirectText(self.output_text)
             
-    def set_original_tono_metric_default(self):
-        """Nastaví metriku z pôvodného tono.py ako predvolený text"""
+    def set_kerr_metric_default(self):
+        """Nastaví Kerrovu metriku ako predvolený text"""
         self.coords_var.set("t, r, theta, phi")
-        self.symbols_var.set("k") # Symbol k ako v originále
+        self.symbols_var.set("M, a") # Späť na M, a pre Kerr
         
-        original_metric_string = (
-            "# Metrika z pôvodného tono.py\n"
-            "# Potrebné symboly: k (už definovaný)\n"
-            "# Funkcia omega(r) je definovaná priamo tu ako sp.Function\n"
-            "omega = sp.Function('omega')(r)\n"
-            "omega_diff_r = sp.diff(omega, r)\n\n"
+        kerr_metric_string = (
+            "# Kerrova metrika v Boyer-Lindquist súradniciach\n"
+            "# Potrebné symboly: M, a (už definované vyššie)\n"
+            "rho2 = r**2 + a**2 * sp.cos(theta)**2\n"
+            "Delta = r**2 - 2*M*r + a**2\n\n"
             "# Výsledný zoznam musí byť priradený do premennej 'metric_matrix'\n"
             "metric_matrix = [\n"
-            "    [\n"
-            "        -sp.exp(-2 * k / r) + omega**2 * r**2 * sp.exp(2 * k / r) * sp.sin(theta)**2,\n"
-            "        omega_diff_r * t * omega * r**2 * sp.exp(2 * k / r) * sp.sin(theta)**2,\n"
-            "        0,\n"
-            "        -omega * r**2 * sp.exp(2 * k / r) * sp.sin(theta)**2\n"
-            "    ],\n"
-            "    [\n"
-            "        omega_diff_r * t * omega * r**2 * sp.exp(2 * k / r) * sp.sin(theta)**2,\n"
-            "        -sp.exp(2 * k / r) * (1 + omega_diff_r**2 * t**2 * r**2 * sp.sin(theta)**2),\n"
-            "        0,\n"
-            "        -omega_diff_r * t * r**2 * sp.exp(2 * k / r) * sp.sin(theta)**2\n"
-            "    ],\n"
-            "    [0, 0, r**2 * sp.exp(2 * k / r), 0],\n"
-            "    [\n"
-            "        -omega * r**2 * sp.exp(2 * k / r) * sp.sin(theta)**2,\n"
-            "        -omega_diff_r * t * r**2 * sp.exp(2 * k / r) * sp.sin(theta)**2,\n"
-            "        0,\n"
-            "        r**2 * sp.exp(2 * k / r) * sp.sin(theta)**2\n"
-            "    ]\n"
+            "  [-(1 - 2*M*r / rho2), 0, 0, - (2 * M * a * r * sp.sin(theta)**2) / rho2],\n"
+            "  [0, rho2 / Delta, 0, 0],\n"
+            "  [0, 0, rho2, 0],\n"
+            "  [- (2 * M * a * r * sp.sin(theta)**2) / rho2, 0, 0, ( (r**2 + a**2)**2 - a**2 * Delta * sp.sin(theta)**2 ) * sp.sin(theta)**2 / rho2]\n"
             "]"
         )
         # Vymažeme existujúci text pred vložením
         self.metric_text.delete(1.0, tk.END)
-        self.metric_text.insert(tk.END, original_metric_string)
+        self.metric_text.insert(tk.END, kerr_metric_string)
 
     def update_status(self, text, progress=None):
         # Aktualizácia GUI vždy cez after() z hlavného vlákna
