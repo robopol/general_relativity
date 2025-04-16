@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import ttk, scrolledtext, messagebox, font
 import threading
 import sympy as sp
 import queue
@@ -45,17 +45,55 @@ class RedirectText:
     def stop(self):
         self.updating = False
 
+class LatexOutputFormatter:
+    """Trieda na formátovanie LaTeX výstupov"""
+    
+    @staticmethod
+    def format_matrix(matrix):
+        """Vytvorí LaTeX reťazec pre maticu"""
+        if not isinstance(matrix, sp.Matrix):
+            return sp.latex(matrix)
+        return sp.latex(matrix)
+    
+    @staticmethod
+    def format_tensor_component(name, indices, expr):
+        """Formátuje komponent tenzora s indexmi do LaTeXu"""
+        indices_str = ",".join(str(idx) for idx in indices)
+        if len(indices) == 2:  # Ak je to 2D tenzor (matica)
+            row, col = indices
+            # Používame syntax pre dolné indexy
+            header = f"{name}_{{{row}{col}}} = "
+        elif len(indices) == 1: # Pre vektory alebo 1D tenzory
+            idx = indices[0]
+            header = f"{name}^{{{idx}}} = " # Horný index pre kovariantnú divergenciu
+        else:  # Pre skaláry
+            header = f"{name} = "
+        
+        # Generovanie LaTeX kódu
+        expr_latex = sp.latex(expr)
+        
+        # Výsledný LaTeX reťazec
+        return f"{header} {expr_latex}\n\n"
+
 class EinsteinCalculatorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Kalkulátor Einsteinových tenzorov")
+        self.root.title("Kalkulátor Einsteinových tenzorov (LaTeX Výstup)")
         self.root.geometry("1000x700")
         
         self.running = False
         self.calculation_thread = None
         self.progress_var = tk.DoubleVar(value=0)
         
+        # Nastavenie fontu pre textové pole (stále užitočné pre čitateľnosť kódu)
+        self.setup_fonts()
+        
         self.create_widgets()
+        
+    def setup_fonts(self):
+        # Nastavenie monospace fontu pre lepšie zobrazenie LaTeX kódu
+        font_family = "Consolas" if "Consolas" in font.families() else "Courier"
+        self.code_font = font.Font(family=font_family, size=10)
         
     def create_widgets(self):
         # Hlavný frame
@@ -80,7 +118,7 @@ class EinsteinCalculatorApp:
         # k konštanta - v pôvodnom kóde je to symbolická premenná
         ttk.Label(left_frame, text="Symbolická konštanta k:").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.k_var = tk.StringVar(value="k")  # Nastavené na 'k' ako v pôvodnom kóde
-        ttk.Entry(left_frame, textvariable=self.k_var, width=15).grid(row=1, column=1, sticky=tk.W, pady=5)
+        ttk.Entry(left_frame, textvariable=self.k_var, width=15, state="disabled").grid(row=1, column=1, sticky=tk.W, pady=5)
         ttk.Label(left_frame, text="(symbolická premenná)").grid(row=1, column=2, sticky=tk.W, pady=5)
         
         # omega funkcia - v pôvodnom kóde je to funkcia omega(r)
@@ -89,15 +127,12 @@ class EinsteinCalculatorApp:
         ttk.Entry(left_frame, textvariable=self.omega_var, width=15, state="disabled").grid(row=2, column=1, sticky=tk.W, pady=5)
         ttk.Label(left_frame, text="(automaticky definovaná ako funkcia)").grid(row=2, column=2, sticky=tk.W, pady=5)
         
-        # Nastavenia výstupu
-        output_settings_frame = ttk.LabelFrame(right_frame, text="Nastavenia výstupu")
-        output_settings_frame.grid(row=0, column=0, pady=5, sticky=tk.NW)
-        
-        # Checkbox pre Unicode výstup
-        self.use_unicode = tk.BooleanVar(value=True)
-        ttk.Checkbutton(output_settings_frame, text="Použiť Unicode formátovanie", 
-                        variable=self.use_unicode).grid(row=0, column=0, sticky=tk.W, pady=2)
-        
+        # Informácia o LaTeX výstupe
+        info_frame = ttk.LabelFrame(right_frame, text="Informácia o výstupe")
+        info_frame.grid(row=0, column=0, pady=5, sticky=tk.NW)
+        ttk.Label(info_frame, text="Výstup je generovaný v LaTeX formáte.") .grid(row=0, column=0, sticky=tk.W, pady=2)
+        ttk.Label(info_frame, text="Skopírujte kód a vložte ho do LaTeX editora.").grid(row=1, column=0, sticky=tk.W, pady=2)
+
         # Tlačidlá
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill=tk.X, pady=10)
@@ -122,15 +157,16 @@ class EinsteinCalculatorApp:
         self.status_label.pack(pady=2)
         
         # Výstupný textový widget
-        output_frame = ttk.LabelFrame(main_frame, text="Výsledky", padding="10")
+        output_frame = ttk.LabelFrame(main_frame, text="Výsledky (LaTeX kód)", padding="10")
         output_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        self.output_text = scrolledtext.ScrolledText(output_frame, wrap=tk.WORD, width=90, height=20, state=tk.DISABLED)
+        self.output_text = scrolledtext.ScrolledText(output_frame, wrap=tk.WORD, width=90, height=20, 
+                                                  state=tk.DISABLED, font=self.code_font)
         self.output_text.pack(fill=tk.BOTH, expand=True)
-        
+                
         # Presmerovanie štandardného výstupu
         self.stdout_redirector = RedirectText(self.output_text)
-        
+            
     def update_status(self, text, progress=None):
         self.status_label.config(text=text)
         if progress is not None:
@@ -184,37 +220,62 @@ class EinsteinCalculatorApp:
             self.output_text.insert(tk.END, "\nVýpočet sa zastavuje...\n")
             self.output_text.config(state=tk.DISABLED)
             self.update_status("Zastavovanie výpočtu...", 0)
-        
+    
+    def print_separator(self):
+        """Vytlačí jednoduchý oddeľovač pre LaTeX výstup"""
+        print("\n%-----------------------------------------------------%\n")
+    
+    def print_section_header(self, text):
+        """Vytlačí nadpis sekcie ako LaTeX komentár"""
+        print(f"\n% ===== {text} ===== %\n")
+    
+    def pretty_print_tensor_latex(self, tensor, name, indices_list):
+        """Vytlačí tenzor ako sériu LaTeX výrazov"""
+        for indices in indices_list:
+            if len(indices) == 2:
+                i, j = indices
+                # Získanie LaTeX výrazu pre komponent
+                latex_expr = LatexOutputFormatter.format_tensor_component(name, [i, j], tensor[i, j])
+                print(latex_expr)
+            elif len(indices) == 1:
+                 i = indices[0]
+                 # Použijeme G^i pre zmiešané a ∇_ν G^{iν} pre divergenciu
+                 name_prefix = "G" if name == "G^" else "\\nabla_\\nu G^"
+                 latex_expr = LatexOutputFormatter.format_tensor_component(name_prefix, [i], tensor[i])
+                 print(latex_expr)
+    
     def perform_calculation(self):
         try:
             # Presmerovanie stdout na náš textový widget
             old_stdout = sys.stdout
             sys.stdout = self.stdout_redirector
             
-            # Inicializácia SymPy - presne ako v pôvodnom súbore
-            sp.init_printing(use_unicode=self.use_unicode.get())
+            # Nastavenie SymPy pre LaTeX výstup
+            # Nepotrebujeme špeciálne nastavenia pre init_printing pre latex()
+            # sp.init_printing(use_latex='mathjax') # Môžeme prípadne nastaviť, ale nie je nutné
             
             # Aktualizácia stavu
             self.root.after(0, lambda: self.update_status("Definujem premenné a funkcie", 5))
             
             # Definícia súradníc a symbolických premenných - presne ako v pôvodnom súbore
             t, r, theta, phi = sp.symbols('t r theta phi', real=True)
-            k_const = sp.Symbol('k', real=True)  # Presne ako v pôvodnom súbore
-            omega = sp.Function('omega')(r)      # Presne ako v pôvodnom súbore
+            k_const = sp.Symbol('k', real=True)
+            omega = sp.Function('omega')(r)
             
             # Zoznam súradníc
             coords = [t, r, theta, phi]
             
-            print("Inicializujem výpočet s preddefinovanými symbolickými premennými:")
-            print("Súradnice: t, r, theta, phi")
-            print("Konštanta: k")
-            print("Funkcia: omega(r)")
-            print("-" * 40)
+            self.print_section_header("Inicializácia výpočtu")
+            print("% Symbolické premenné:")
+            print(f"%   Súradnice: t, r, \\theta, \\phi")
+            print(f"%   Konštanta: k")
+            print(f"%   Funkcia: \\omega(r)")
+            self.print_separator()
             
             # Aktualizácia stavu
             self.root.after(0, lambda: self.update_status("Vytváram metrický tenzor", 10))
             
-            # Definícia metrického tenzora podľa zadania - presne ako v pôvodnom súbore
+            # Definícia metrického tenzora podľa zadania
             g = sp.Matrix([
                 [
                     -sp.exp(-2 * k_const / r) + omega**2 * r**2 * sp.exp(2 * k_const / r) * sp.sin(theta)**2,
@@ -237,9 +298,9 @@ class EinsteinCalculatorApp:
                 ]
             ])
             
-            print("Metrický tenzor g_μν:")
-            sp.pprint(g)
-            print("-" * 40)
+            self.print_section_header("Metrický tenzor g_{\\mu\\nu}")
+            print(sp.latex(g)) # Vypíšeme LaTeX kód pre celú maticu
+            self.print_separator()
             
             if not self.running:
                 raise InterruptedError("Výpočet bol zastavený")
@@ -247,13 +308,13 @@ class EinsteinCalculatorApp:
             # Aktualizácia stavu
             self.root.after(0, lambda: self.update_status("Počítam inverznú metriku", 20))
             
-            # Inverzná metrika - presne ako v pôvodnom súbore
+            # Inverzná metrika
             print("Počítam inverznú metriku...")
-            g_inv = sp.simplify(g.inv())  # Presne ako v pôvodnom súbore
+            g_inv = sp.simplify(g.inv())
             
-            print("Inverzná metrika g^μν:")
-            sp.pprint(g_inv)
-            print("-" * 40)
+            self.print_section_header("Inverzná metrika g^{\\mu\\nu}")
+            print(sp.latex(g_inv))
+            self.print_separator()
             
             if not self.running:
                 raise InterruptedError("Výpočet bol zastavený")
@@ -264,8 +325,8 @@ class EinsteinCalculatorApp:
             # Aktualizácia stavu
             self.root.after(0, lambda: self.update_status("Počítam Christoffelové symboly", 30))
             
-            # Výpočet Christoffelových symbolov - presne ako v pôvodnom súbore
-            print("Počítam Christoffelové symboly...")
+            # Výpočet Christoffelových symbolov
+            print("Počítam Christoffelové symboly... (Výstup bude obsahovať LaTeX kód)")
             Gamma = [[[0 for _ in range(n)] for _ in range(n)] for _ in range(n)]
             
             for i in range(n):
@@ -277,11 +338,9 @@ class EinsteinCalculatorApp:
                                           sp.diff(g[j, l], coords[m]))
                             for m in range(n)
                         )
-                        # Kontrolujeme či výpočet nebol zastavený
                         if not self.running:
                             raise InterruptedError("Výpočet bol zastavený")
                 
-                # Aktualizujeme indikátor priebehu
                 progress = 30 + (i / n * 15)
                 self.root.after(0, lambda p=progress: self.update_status("Počítam Christoffelové symboly", p))
             
@@ -291,7 +350,7 @@ class EinsteinCalculatorApp:
             # Aktualizácia stavu
             self.root.after(0, lambda: self.update_status("Počítam Ricciho tenzor", 45))
             
-            # Výpočet Ricciho tenzora - presne ako v pôvodnom súbore
+            # Výpočet Ricciho tenzora
             print("Počítam Ricciho tenzor...")
             R = sp.Matrix.zeros(n, n)
             
@@ -301,13 +360,11 @@ class EinsteinCalculatorApp:
                     term2 = sum(sp.diff(Gamma[mu][l][nu], coords[l]) for l in range(n))
                     term3 = sum(sum(Gamma[l][mu][nu] * Gamma[r][l][r] for r in range(n)) for l in range(n))
                     term4 = sum(sum(Gamma[mu][l][r] * Gamma[r][nu][l] for r in range(n)) for l in range(n))
-                    R[mu, nu] = sp.simplify(term1 - term2 + term3 - term4)  # Presne ako v pôvodnom súbore
+                    R[mu, nu] = sp.simplify(term1 - term2 + term3 - term4)
                     
-                    # Kontrolujeme či výpočet nebol zastavený
                     if not self.running:
                         raise InterruptedError("Výpočet bol zastavený")
                 
-                # Aktualizujeme indikátor priebehu
                 progress = 45 + (mu / n * 15)
                 self.root.after(0, lambda p=progress: self.update_status("Počítam Ricciho tenzor", p))
             
@@ -317,13 +374,13 @@ class EinsteinCalculatorApp:
             # Aktualizácia stavu
             self.root.after(0, lambda: self.update_status("Počítam Ricciho skalár", 60))
             
-            # Ricciho skalár - presne ako v pôvodnom súbore
+            # Ricciho skalár
             print("Počítam Ricciho skalár...")
-            R_scalar = sp.simplify(sum(g_inv[i, j] * R[i, j] for i in range(n) for j in range(n)))  # Presne ako v pôvodnom súbore
+            R_scalar = sp.simplify(sum(g_inv[i, j] * R[i, j] for i in range(n) for j in range(n)))
             
-            print("Ricciho skalár R:")
-            sp.pprint(R_scalar)
-            print("-" * 40)
+            self.print_section_header("Ricciho skalár R")
+            print(sp.latex(R_scalar)) # Vypíšeme LaTeX pre skalár
+            self.print_separator()
             
             if not self.running:
                 raise InterruptedError("Výpočet bol zastavený")
@@ -331,20 +388,13 @@ class EinsteinCalculatorApp:
             # Aktualizácia stavu
             self.root.after(0, lambda: self.update_status("Počítam Einsteinov tenzor", 70))
             
-            # Einsteinov tenzor G_{μν} - presne ako v pôvodnom súbore
+            # Einsteinov tenzor G_{μν}
             print("Počítam Einsteinov tenzor...")
-            Einstein_T = sp.simplify(R - sp.Rational(1, 2) * R_scalar * g)  # Presne ako v pôvodnom súbore
+            Einstein_T = sp.simplify(R - sp.Rational(1, 2) * R_scalar * g)
             
-            print("\n--- Einsteinov tenzor G_{μν} ---")
-            for i in range(n):
-                for j in range(n):
-                    print(f"G_{{{i}{j}}} =")
-                    sp.pprint(Einstein_T[i, j], use_unicode=False)
-                    print()
-                    
-                    # Kontrolujeme či výpočet nebol zastavený
-                    if not self.running:
-                        raise InterruptedError("Výpočet bol zastavený")
+            self.print_section_header("Einsteinov tenzor G_{\\mu\\nu}")
+            indices = [(i, j) for i in range(n) for j in range(n)]
+            self.pretty_print_tensor_latex(Einstein_T, "G", indices)
             
             if not self.running:
                 raise InterruptedError("Výpočet bol zastavený")
@@ -352,20 +402,13 @@ class EinsteinCalculatorApp:
             # Aktualizácia stavu
             self.root.after(0, lambda: self.update_status("Počítam zmiešané zložky Einsteinovho tenzora", 80))
             
-            # Zmiešané zložky Einsteinovho tenzora G^μ_ν - presne ako v pôvodnom súbore
+            # Zmiešané zložky Einsteinovho tenzora G^μ_ν
             print("Počítam zmiešané zložky Einsteinovho tenzora...")
-            G_mixed = sp.simplify(g_inv * Einstein_T)  # Presne ako v pôvodnom súbore
+            G_mixed = sp.simplify(g_inv * Einstein_T)
             
-            print("\n--- Zmiešané zložky Einsteinovho tenzora G^μ_ν ---")
-            for i in range(n):
-                for j in range(n):
-                    print(f"G^{{{i}}}_{{{j}}} =")
-                    sp.pprint(G_mixed[i, j], use_unicode=False)
-                    print("-" * 40)
-                    
-                    # Kontrolujeme či výpočet nebol zastavený
-                    if not self.running:
-                        raise InterruptedError("Výpočet bol zastavený")
+            self.print_section_header("Zmiešané zložky Einsteinovho tenzora G^{\\mu}_{\\nu}")
+            mixed_indices = [(i, j) for i in range(n) for j in range(n)]
+            self.pretty_print_tensor_latex(G_mixed, "G^", mixed_indices) # Použijeme prefix G^ pre zmiešané zložky
             
             if not self.running:
                 raise InterruptedError("Výpočet bol zastavený")
@@ -373,7 +416,7 @@ class EinsteinCalculatorApp:
             # Aktualizácia stavu
             self.root.after(0, lambda: self.update_status("Počítam kovariantnú divergenciu", 90))
             
-            # Kovariantná divergencia ∇_ν G^μν - presne ako v pôvodnom súbore
+            # Kovariantná divergencia ∇_ν G^μν
             print("Počítam kovariantnú divergenciu Einsteinovho tenzora...")
             div_G = sp.Matrix.zeros(n, 1)
             for mu in range(n):
@@ -382,30 +425,26 @@ class EinsteinCalculatorApp:
                     expr += sp.diff(G_mixed[mu, nu], coords[nu])
                     for l in range(n):
                         expr += G_mixed[l, nu] * Gamma[mu][nu][l]
-                div_G[mu] = sp.simplify(expr)  # Presne ako v pôvodnom súbore
+                div_G[mu] = sp.simplify(expr)
                 
-                # Aktualizujeme indikátor priebehu
                 progress = 90 + (mu / n * 10)
                 self.root.after(0, lambda p=progress: self.update_status("Počítam kovariantnú divergenciu", p))
                 
-                # Kontrolujeme či výpočet nebol zastavený
                 if not self.running:
                     raise InterruptedError("Výpočet bol zastavený")
             
-            print("\n--- Kovariantná divergencia zmiešaného Einsteinovho tenzora ∇_ν G^μν ---")
-            for i in range(n):
-                print(f"∇_ν G^{{{i}ν}} =")
-                sp.pprint(div_G[i], use_unicode=False)
-                print("=" * 40)
+            self.print_section_header("Kovariantná divergencia \\nabla_\\nu G^{\\mu\\nu}")
+            div_indices = [(i,) for i in range(n)]
+            self.pretty_print_tensor_latex(div_G, "\\nabla_\\nu G^", div_indices) # Použijeme správny prefix
             
             self.root.after(0, lambda: self.update_status("Výpočet dokončený", 100))
-            print("\nVýpočet dokončený!")
+            self.print_section_header("Výpočet dokončený")
             
         except InterruptedError as e:
-            print(f"\n{str(e)}!")
+            print(f"\n% {str(e)}!")
             self.root.after(0, lambda: self.update_status("Výpočet zastavený", 0))
         except Exception as e:
-            print(f"\nChyba pri výpočte: {str(e)}")
+            print(f"\n% Chyba pri výpočte: {str(e)}")
             self.root.after(0, lambda: self.update_status(f"Chyba: {str(e)}", 0))
         finally:
             # Obnova štandardného výstupu
