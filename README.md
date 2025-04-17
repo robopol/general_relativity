@@ -2,6 +2,8 @@
 
 This application provides a graphical user interface (GUI) built with Tkinter for calculating various tensor quantities in General Relativity for a user-defined spacetime metric. It uses the SymPy library for symbolic computations.
 
+![Test Image](general_relativity_test.png)
+
 ## Features
 
 *   **User-Defined Metric:** Input the metric tensor components as a Python list of lists using SymPy syntax.
